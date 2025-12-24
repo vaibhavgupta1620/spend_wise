@@ -113,7 +113,7 @@ async function checkSrvIfNeeded(uri) {
 ------------------------------------------------------------------ */
 
 async function connectMongo() {
-  const uri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/spendwise';
+  const uri = process.env.MONGO_URI || 'mongodb://0.0.0.0:27017/spendwise';
 
   if (!uri) {
     throw new Error('MONGO_URI not defined');
