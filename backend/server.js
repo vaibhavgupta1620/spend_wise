@@ -4,198 +4,99 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const dns = require('dns').promises;
 const path = require('path');
-const process = require('process');
 
 const app = express();
 
 /* ------------------------------------------------------------------
-   CORS CONFIG
+   CORS (RENDER SAFE – NO BLOCKING)
 ------------------------------------------------------------------ */
 
-const FRONTEND_ORIGIN = (process.env.FRONTEND_ORIGIN || 'http://localhost:8080').trim();
-
-const corsOptions = {
-    origin: function (origin, callback) {
-        // allow REST tools / server-to-server calls
-        if (!origin) return callback(null, true);
-        if (origin === FRONTEND_ORIGIN) return callback(null, true);
-        return callback(new Error('Not allowed by CORS'));
-    },
+app.use(
+  cors({
+    origin: true,        // allow same-origin + render domain
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    optionsSuccessStatus: 204,
-};
+  })
+);
+app.options('*', cors());
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
-
-console.log('[server] CORS configured for origin:', FRONTEND_ORIGIN);
+console.log('[server] CORS enabled');
 
 /* ------------------------------------------------------------------
    MIDDLEWARE
 ------------------------------------------------------------------ */
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 app.use((req, res, next) => {
-    console.log(`[REQ] ${req.method} ${req.path} auth=${!!req.headers.authorization}`);
-    next();
+  console.log(`[REQ] ${req.method} ${req.path}`);
+  next();
 });
 
 /* ------------------------------------------------------------------
    ROUTES
 ------------------------------------------------------------------ */
 
-const groupsRouter = require('./routes/groups');
-const groupMembersRouter = require('./routes/groupMembers');
-const approvalRulesRouter = require('./routes/approvalRules');
+app.use('/api/groups', require('./routes/groups'));
+app.use('/api/groups', require('./routes/groupMembers'));
+app.use('/api/groups', require('./routes/approvalRules'));
 
-const expensesRouter = require('./routes/expenses');
-const expenseApprovalsRouter = require('./routes/expenseApprovals');
+app.use('/api/expenses', require('./routes/expenses'));
+app.use('/api/expense-approvals', require('./routes/expenseApprovals'));
 
-const tripsRouter = require('./routes/trips');
-const tripMembersRouter = require('./routes/tripMembers');
-const tripExpensesRouter = require('./routes/tripExpenses');
-const tripSettlementsRouter = require('./routes/tripSettlements');
+app.use('/api/trips', require('./routes/trips'));
+app.use('/api/trips', require('./routes/tripMembers'));
+app.use('/api/trips', require('./routes/tripExpenses'));
+app.use('/api/trips', require('./routes/tripSettlements'));
 
-const usersRouter = require('./routes/users');
-const authRouter = require('./routes/auth');
-
-/* ------------------------------------------------------------------
-   ADMIN / AUTH-POPULATE (SAFE LOAD)
------------------------------------------------------------------- */
-
-let populateUserFromJwt = null;
-let adminRouter = null;
-
-try {
-    populateUserFromJwt = require('./middleware/auth-populate');
-    adminRouter = require('./routes/admin');
-} catch (err) {
-    console.error('[server] admin/auth-populate load failed:\n', err.stack || err);
-}
-
-/* ------------------------------------------------------------------
-   DNS SRV CHECK (MongoDB Atlas)
------------------------------------------------------------------- */
-
-async function checkSrvIfNeeded(uri) {
-    if (!uri || !uri.startsWith('mongodb+srv://')) return true;
-
-    try {
-        let host = uri.split('@')[1] || uri;
-        host = host.split('/')[0].split('?')[0];
-
-        console.log('Detected SRV host part:', host);
-
-        const records = await dns.resolveSrv(host);
-        console.log(
-            'SRV records found:',
-            records.map(r => `${r.name}:${r.port}`).join(', ')
-        );
-
-        return true;
-    } catch (err) {
-        console.error('SRV DNS resolution failed:', err.code || err.message);
-        return false;
-    }
-}
-
-/* ------------------------------------------------------------------
-   MONGODB CONNECTION
------------------------------------------------------------------- */
-
-async function connectMongo() {
-    const rawUri = process.env.MONGODB_URI;
-    const fallback = 'mongodb://127.0.0.1:27017/spendwise';
-    const uri = rawUri && rawUri.trim() ? rawUri.trim() : fallback;
-
-    if (uri.startsWith('mongodb+srv://')) {
-        const srvOk = await checkSrvIfNeeded(uri);
-        if (!srvOk) {
-            throw new Error('MongoDB SRV lookup failed');
-        }
-    }
-
-    console.log('Connecting to MongoDB...');
-
-    await mongoose.connect(uri, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-        serverSelectionTimeoutMS: 10000,
-    });
-
-    console.log('MongoDB connected ✅');
-
-    mongoose.connection.on('error', err => {
-        console.error('MongoDB runtime error:', err);
-    });
-
-    mongoose.connection.on('disconnected', () => {
-        console.warn('MongoDB disconnected');
-    });
-}
-
-/* ------------------------------------------------------------------
-   API ROUTE MOUNTING
------------------------------------------------------------------- */
-
-app.use('/api/groups', groupsRouter);
-app.use('/api/groups', groupMembersRouter);
-app.use('/api/groups', approvalRulesRouter);
-
-app.use('/api/expenses', expensesRouter);
-app.use('/api/expense-approvals', expenseApprovalsRouter);
-
-app.use('/api/trips', tripsRouter);
-app.use('/api/trips', tripMembersRouter);
-app.use('/api/trips', tripExpensesRouter);
-app.use('/api/trips', tripSettlementsRouter);
+app.use('/api/users', require('./routes/users'));
+app.use('/api/auth', require('./routes/auth'));
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-app.use('/api/users', usersRouter);
-app.use('/api/auth', authRouter);
-
-if (populateUserFromJwt) {
-    app.use(populateUserFromJwt);
-    console.log('[server] auth-populate middleware mounted');
-}
-
-if (adminRouter) {
-    app.use('/api/admin', adminRouter);
-    console.log('[server] admin router mounted at /api/admin');
-}
-
 /* ------------------------------------------------------------------
-   SERVE FRONTEND (REACT BUILD)
+   OPTIONAL ADMIN / AUTH POPULATE
 ------------------------------------------------------------------ */
 
-const clientPath = path.join(__dirname, 'client');
+try {
+  const populateUserFromJwt = require('./middleware/auth-populate');
+  const adminRouter = require('./routes/admin');
 
-app.use(express.static(clientPath));
+  app.use(populateUserFromJwt);
+  app.use('/api/admin', adminRouter);
 
-// React SPA fallback
-app.get('*', (req, res) => {
-    res.sendFile(path.join(clientPath, 'index.html'));
-});
+  console.log('[server] admin routes enabled');
+} catch {
+  console.log('[server] admin routes not found (safe)');
+}
 
 /* ------------------------------------------------------------------
    HEALTH CHECKS
 ------------------------------------------------------------------ */
 
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok' });
+  res.json({ status: 'ok' });
 });
 
 app.get('/api/readiness', (req, res) => {
-    res.json({
-        ready: mongoose.connection.readyState === 1,
-        state: mongoose.connection.readyState,
-    });
+  res.json({
+    ready: mongoose.connection.readyState === 1,
+    state: mongoose.connection.readyState,
+  });
+});
+
+/* ------------------------------------------------------------------
+   SERVE FRONTEND (client/dist)
+------------------------------------------------------------------ */
+
+const clientPath = path.join(__dirname, '../client/dist');
+
+app.use(express.static(clientPath));
+
+// SPA fallback – MUST BE AFTER API ROUTES
+app.get('*', (req, res) => {
+  res.sendFile(path.join(clientPath, 'index.html'));
 });
 
 /* ------------------------------------------------------------------
@@ -203,61 +104,35 @@ app.get('/api/readiness', (req, res) => {
 ------------------------------------------------------------------ */
 
 app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err.stack || err);
-
-    if (err.message && err.message.includes('Not allowed by CORS')) {
-        return res.status(403).json({ message: 'CORS origin not allowed' });
-    }
-
-    res.status(err.status || 500).json({
-        message: err.message || 'Internal Server Error',
-    });
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    message: err.message || 'Internal Server Error',
+  });
 });
 
 /* ------------------------------------------------------------------
    SERVER STARTUP
 ------------------------------------------------------------------ */
 
-const PORT = process.env.PORT || 5000;
-let server;
+const PORT = process.env.PORT || 10000;
 
 async function start() {
-    try {
-        await connectMongo();
-
-        server = app.listen(PORT, () => {
-            console.log(`Server listening on port ${PORT}`);
-        });
-    } catch (err) {
-        console.error('❌ Failed to start server:', err.message);
-        process.exit(1);
+  try {
+    if (!process.env.MONGODB_URI) {
+      throw new Error('MONGODB_URI missing');
     }
+
+    console.log('Connecting to MongoDB...');
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('MongoDB connected ✅');
+
+    app.listen(PORT, () => {
+      console.log(`Server listening on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error('❌ Failed to start server:', err.message);
+    process.exit(1);
+  }
 }
 
 start();
-
-/* ------------------------------------------------------------------
-   GRACEFUL SHUTDOWN
------------------------------------------------------------------- */
-
-async function shutdown(signal) {
-    console.log(`\n${signal} received — shutting down...`);
-
-    try {
-        if (server) {
-            await new Promise(resolve => server.close(resolve));
-            console.log('HTTP server closed');
-        }
-
-        await mongoose.connection.close(false);
-        console.log('MongoDB connection closed');
-
-        process.exit(0);
-    } catch (err) {
-        console.error('Shutdown error:', err);
-        process.exit(1);
-    }
-}
-
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
