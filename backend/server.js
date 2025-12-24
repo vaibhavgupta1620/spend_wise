@@ -90,7 +90,7 @@ app.get('/api/readiness', (req, res) => {
    SERVE FRONTEND (client/dist)
 ------------------------------------------------------------------ */
 
-const clientPath = path.join(__dirname, '../client/dist');
+const clientPath = path.join(__dirname, '../client');
 
 app.use(express.static(clientPath));
 
