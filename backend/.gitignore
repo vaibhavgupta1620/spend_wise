@@ -1,5 +1,5 @@
 # ===============================
-# Node dependencies
+# Dependencies
 # ===============================
 node_modules/
 
@@ -10,29 +10,27 @@ node_modules/
 .env.local
 
 # ===============================
-# Build outputs
+# Frontend build output (wrongly generated earlier)
 # ===============================
+client/
 dist/
-build/
+
+# ===============================
+# Uploads (keep folder, ignore files)
+# ===============================
+uploads/*
+!uploads/.gitkeep
 
 # ===============================
 # Logs
 # ===============================
-logs/
 *.log
-npm-debug.log*
-yarn-error.log*
-pnpm-debug.log*
+logs/
 
 # ===============================
-# OS / Editor files
+# OS / Editor
 # ===============================
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-# ===============================
-# Git safety
-# ===============================
-**/.git

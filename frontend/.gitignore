@@ -1,5 +1,5 @@
 # ===============================
-# Node dependencies
+# Dependencies
 # ===============================
 node_modules/
 
@@ -10,29 +10,29 @@ node_modules/
 .env.local
 
 # ===============================
-# Build outputs
+# Build output
 # ===============================
 dist/
 build/
 
 # ===============================
+# Cache
+# ===============================
+.cache/
+.eslintcache
+
+# ===============================
 # Logs
 # ===============================
-logs/
 *.log
 npm-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
 # ===============================
-# OS / Editor files
+# OS / Editor
 # ===============================
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-# ===============================
-# Git safety
-# ===============================
-**/.git
